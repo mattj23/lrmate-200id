@@ -19,7 +19,11 @@ The `meshes/` folder contains several subdirectories of STL files which are repr
 * The `meshes/low-res/` folder contains the same STL exports but ones that I've manually thinned and de-featured.  They have significantly reduced triangle counts and some features like holes and inter-component seams have been removed.  The majority of the surfaces will be roughly within 0.5mm of the original medium resolution meshes, except for the de-featured regions.  I created these meshes to use them for more complicated collision detection than the convex bodies.
 * The `meshes/convex/` folder contains convex hulls generated from the low resolution meshes by the `scripts/generate_convex.py` script.  These are ideal for fast collision checking.
 
-### IK Fast
+### IKFast Inverse Kinematics
+
+The IKFast solver is a uniquely fast analytic inverse kinematics tool that was originally built as part of OpenRAVE.  IKFast produces an optimized C++ file with a direct solver from a robot's kinematic definitions.  However, the IKFast tooling is notoriously difficult to get to run.
+
+The `ikfast/` folder contains the already-generated C++ files for an IKFast solver of the LRMate 200iD.  The `ikfast.h` and `ikfast_robot.cpp` files can be directly used in a C++ project to give it access to the solver.  Documentation and an explanation of how the modules were built can be found in the [`README.md`](ikfast/README.md) in that directory.
 
 ### Test Cases
 
