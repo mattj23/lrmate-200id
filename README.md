@@ -19,5 +19,13 @@ The `meshes/` folder contains several subdirectories of STL files which are repr
 * The `meshes/low-res/` folder contains the same STL exports but ones that I've manually thinned and de-featured.  They have significantly reduced triangle counts and some features like holes and inter-component seams have been removed.  The majority of the surfaces will be roughly within 0.5mm of the original medium resolution meshes, except for the de-featured regions.  I created these meshes to use them for more complicated collision detection than the convex bodies.
 * The `meshes/convex/` folder contains convex hulls generated from the low resolution meshes by the `scripts/generate_convex.py` script.  These are ideal for fast collision checking.
 
+### IK Fast
+
+### Test Cases
+
+The `test_cases/` folder contains various sets of test data which can be used to check and verify code and kinematics models.  See the [`README.md`](test_cases/README.md) file in that folder for more details.
+
+* `test_cases/r30ib_forward_kinematics.json` - This is a set of joint positions (in degrees) and the corresponding resulting transformation matrix of the robot end flange. Can be used to check a kinematics model against joint values as they would be put into the R-30iB controller. Be aware of the J2/J3 interactions.
+
 ### Scripts
 
