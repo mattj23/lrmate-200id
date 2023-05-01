@@ -1,5 +1,5 @@
 """
-
+    Generic robot visualizer and simple FK
 
     Requires the following libraries:
     * numpy (pip install numpy)
@@ -103,7 +103,7 @@ class Robot:
         self.urdf: urdf.Robot = urdf.Robot.from_xml_file(str(file_path))
         self.origin: Transform = kwargs.get("origin", Transform.identity())
         self.mesh_path: Path = kwargs.get("mesh_path", None)
-        self.collsion_mesh_path: Path = kwargs.get("collision_mesh_path", None)
+        self.collision_mesh_path: Path = kwargs.get("collision_mesh_path", None)
 
         folder, _ = os.path.split(file_path)
         package_root = _find_urdf_package_root(file_path)
@@ -116,7 +116,7 @@ class Robot:
             if isinstance(visual.geometry, urdf.Mesh):
                 mesh = _mesh_from_package_filename(visual.geometry.filename, package_root, self.mesh_path)
                 collision_mesh = _mesh_from_package_filename(link.collision.geometry.filename, package_root,
-                                                             self.collsion_mesh_path)
+                                                             self.collision_mesh_path)
 
                 self.links[link.name] = Link(link.name, mesh, collision_mesh=collision_mesh)
                 if link.name not in self.urdf.parent_map.keys():
@@ -240,23 +240,4 @@ class Transform:
 
     def invert(self) -> Transform:
         return Transform(numpy.linalg.inv(self.matrix))
-
-
-def main():
-    root_path = Path(__file__).parent.parent
-    robot = Robot(root_path.joinpath("urdf", "urdf", "LRMate-200iD.urdf"),
-                  mesh_path=root_path.joinpath("meshes", "med-res"),
-                  collsion_mesh_path=root_path.joinpath("meshes", "med-res", "convex"))
-
-    # Note that these are raw degrees from each joint's geometric zero position, and are not the same as the values
-    # which would be put into the R-30iB controller to achieve the same pose. There is a direct conversion, but it
-    # requires handling the J2/J3 joint interaction.
-    robot.set_joints_deg({"J1": 30, "J2": 30, "J3": 30, "J4": 30, "J5": 30, "J6": 30})
-
-    elements = [link.mesh for link in robot.links.values()]
-    open3d.visualization.draw_geometries(elements)
-
-
-if __name__ == "__main__":
-    main()
 
