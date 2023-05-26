@@ -12,8 +12,9 @@ def main():
     for case in data:
         joints = case["joints"]
         end = case["end"]
-        t = numpy.matrix(end).reshape(4, 4).tolist()
-        all_data.append((joints, t))
+        t = numpy.matrix(end).reshape(4, 4).transpose()
+        print(t)
+        all_data.append((joints, t.tolist()))
     print(all_data)
 
 
