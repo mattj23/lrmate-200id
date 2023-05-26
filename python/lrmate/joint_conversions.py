@@ -17,14 +17,26 @@ def main():
 
 
 def fanuc_to_raw(joint_bundle: Dict[str, float]) -> Dict:
-    raw_joints = {"J1": joint_bundle["J1"], "J2": -joint_bundle["J2"], "J3": joint_bundle["J2"] + joint_bundle["J3"],
-                  "J4": joint_bundle["J4"], "J5": joint_bundle["J5"], "J6": joint_bundle["J6"]}
+    raw_joints = dict(joint_bundle)
+    raw_joints["J2"] = -joint_bundle["J2"]
+    raw_joints["J3"] = joint_bundle["J3"] + joint_bundle["J2"]
+
+    # raw_joints = {"J1": joint_bundle["J1"],
+    #               "J2": -joint_bundle["J2"],
+    #               "J3": joint_bundle["J2"] + joint_bundle["J3"],
+    #               "J4": joint_bundle["J4"],
+    #               "J5": joint_bundle["J5"],
+    #               "J6": joint_bundle["J6"]}
     return raw_joints
 
 
 def raw_to_fanuc(joint_bundle: Dict[str, float]) -> Dict:
-    fanuc_joints = {"J1": joint_bundle["J1"], "J2": -joint_bundle["J2"], "J3": joint_bundle["J2"] + joint_bundle["J3"],
-                    "J4": joint_bundle["J4"], "J5": joint_bundle["J5"], "J6": joint_bundle["J6"]}
+    fanuc_joints = dict(joint_bundle)
+    fanuc_joints["J2"] = -joint_bundle["J2"]
+    fanuc_joints["J3"] = joint_bundle["J3"] + joint_bundle["J2"]
+
+    # fanuc_joints = {"J1": joint_bundle["J1"], "J2": -joint_bundle["J2"], "J3": joint_bundle["J2"] + joint_bundle["J3"],
+    #                 "J4": joint_bundle["J4"], "J5": joint_bundle["J5"], "J6": joint_bundle["J6"]}
     return fanuc_joints
 
 

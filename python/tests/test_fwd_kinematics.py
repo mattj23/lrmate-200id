@@ -2,8 +2,12 @@ import pytest
 import numpy
 from lrmate.robot import Robot
 from lrmate.joint_conversions import raw_to_fanuc, fanuc_to_raw
-from lrmate.transforms import Transform
+from lrmate.transforms import Transform, XyzWpr
 from ._test_data import _fanuc_joints_and_end_transforms
+
+
+def test_robot_home():
+    home_pose = XyzWpr(465.0, 0.0, 365.0, -180.0, -90.0, 0.0)
 
 
 @pytest.mark.parametrize('joints,transform', _fanuc_joints_and_end_transforms)
