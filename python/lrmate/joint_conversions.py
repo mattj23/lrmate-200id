@@ -1,5 +1,5 @@
 import open3d
-from lrmate.robot import Robot, Link, Transform, Vector, Joint
+from lrmate.robot import RobotWithMeshes, LinkWithMesh, Transform, Vector, Joint
 from pathlib import Path
 from typing import List, Optional, Dict, Union
 

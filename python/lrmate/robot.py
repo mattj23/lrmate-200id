@@ -15,6 +15,9 @@ import os
 from typing import List, Optional, Dict, Union
 from pathlib import Path
 
+import numpy
+
+from .transforms import Transform, Vector
 
 from open3d import geometry
 import open3d
@@ -22,14 +25,60 @@ import open3d
 from urdf_parser_py import urdf
 
 
-class Link:
-    def __init__(self, name: str, mesh: geometry.TriangleMesh, **kwargs):
+class Joint:
+    def __init__(self, name: str, parent: Link, child: Link, **kwargs):
         self.name = name
+        self.parent = parent
+        self.child = child
+        self.base_transform: Transform = kwargs.get("transform", Transform.identity())
+        self.axis = kwargs.get("axis")
+        self.position = kwargs.get("position", 0)
+
+        if self not in self.parent.joints:
+            self.parent.joints.append(self)
+
+    def get_transform(self) -> Transform:
+        joint_transform = Transform.rotate_around_axis(self.position, self.axis)
+        return self.base_transform * joint_transform
+
+    def internal_data(self) -> dict:
+        return {
+            "name": self.name,
+            "parent": self.parent.name,
+            "child": self.child.name,
+            "transform": self.base_transform.matrix.tolist(),
+            "axis": self.axis,
+            "position": self.position
+        }
+
+
+class Link:
+    def __init__(self, name: str, **kwargs):
+        self.name = name
+        self.joints: List[Joint] = []
+        self.current_transform: Optional[Transform] = None
+
+    def adjust(self, transform: Transform, joint_bundle: Dict[str, float]):
+        self.current_transform = transform
+        for joint in self.joints:
+            if joint.name in joint_bundle:
+                joint.position = joint_bundle[joint.name]
+            stacked = self.current_transform * joint.get_transform()
+            joint.child.adjust(stacked, joint_bundle)
+
+    def internal_data(self) -> dict:
+        return {
+            "name": self.name,
+            "joints": [joint.name for joint in self.joints]
+        }
+
+
+class LinkWithMesh(Link):
+    def __init__(self, name: str, mesh: geometry.TriangleMesh, **kwargs):
+        super().__init__(name, **kwargs)
         self.mesh = mesh
         self.collision_mesh: Optional[open3d.geometry.TriangleMesh] = kwargs.get("collision_mesh", None)
         self.cross = open3d.geometry.TriangleMesh.create_coordinate_frame(0.125)
-        self.joints: List[Joint] = []
-        self.current_transform: Optional[Transform] = None
 
     def get_untransformed_mesh(self) -> geometry.TriangleMesh:
         if self.current_transform is not None:
@@ -53,20 +102,6 @@ class Link:
                 joint.position = joint_bundle[joint.name]
             stacked = self.current_transform * joint.get_transform()
             joint.child.adjust(stacked, joint_bundle)
-
-
-class Joint:
-    def __init__(self, name: str, parent: Link, child: Link, **kwargs):
-        self.name = name
-        self.parent = parent
-        self.child = child
-        self.base_transform: Transform = kwargs.get("transform", Transform.identity())
-        self.axis = kwargs.get("axis")
-        self.position = kwargs.get("position", 0)
-
-    def get_transform(self) -> Transform:
-        joint_transform = Transform.rotate_around_axis(self.position, self.axis)
-        return self.base_transform * joint_transform
 
 
 def _find_urdf_package_root(file_path: str) -> Optional[str]:
@@ -96,6 +131,49 @@ def _mesh_from_package_filename(file_name: Union[str, Path],
 
 
 class Robot:
+    def __init__(self, **kwargs):
+        self.origin: Transform = Transform.identity()
+        if "origin" in kwargs:
+            self.origin = Transform(numpy.matrix(kwargs["origin"]))
+
+        self.links = {}
+        for link_name, link_data in kwargs.get("links", {}).items():
+            self.links[link_name] = Link(link_name)
+
+        self.joints = {}
+        for joint_name, joint_data in kwargs.get("joints", {}).items():
+            self.joints[joint_name] = Joint(joint_name,
+                                            self.links[joint_data["parent"]],
+                                            self.links[joint_data["child"]],
+                                            transform=Transform(numpy.matrix(joint_data["transform"])),
+                                            axis=joint_data["axis"],
+                                            position=joint_data["position"])
+
+        self.end_link: Optional[Link] = next((l for l in self.links.values() if not l.joints), None)
+        all_children = []
+        for link in self.links.values():
+            all_children.extend(link.joints)
+
+        self.base_link: Optional[Link] = next((l for l in self.links.values() if l not in all_children), None)
+
+        starting_joints = {k: 0 for k in self.joints.keys()}
+        self.set_joints(starting_joints)
+
+    @staticmethod
+    def default_lrmate():
+        return Robot(**_default_lr_mate)
+
+    def set_joints(self, joint_bundle: Dict[str, float]):
+        self.base_link.adjust(self.origin, joint_bundle)
+
+    def set_joints_deg(self, joint_bundle: Dict[str, float]):
+        self.set_joints({k: math.radians(v) for k, v in joint_bundle.items()})
+
+    def link_meshes(self) -> List[open3d.geometry.TriangleMesh]:
+        return [link.mesh for link in self.links.values()]
+
+
+class RobotWithMeshes:
     def __init__(self, file_path: Union[str, Path], **kwargs):
         self.urdf: urdf.Robot = urdf.Robot.from_xml_file(str(file_path))
         self.origin: Transform = kwargs.get("origin", Transform.identity())
@@ -106,8 +184,8 @@ class Robot:
         package_root = _find_urdf_package_root(file_path)
 
         self.links = {}
-        self.base_link: Optional[Link] = None
-        self.end_link: Optional[Link] = None
+        self.base_link: Optional[LinkWithMesh] = None
+        self.end_link: Optional[LinkWithMesh] = None
         for link in self.urdf.links:
             visual: urdf.Visual = link.visual
             if isinstance(visual.geometry, urdf.Mesh):
@@ -115,7 +193,7 @@ class Robot:
                 collision_mesh = _mesh_from_package_filename(link.collision.geometry.filename, package_root,
                                                              self.collision_mesh_path)
 
-                self.links[link.name] = Link(link.name, mesh, collision_mesh=collision_mesh)
+                self.links[link.name] = LinkWithMesh(link.name, mesh, collision_mesh=collision_mesh)
                 if link.name not in self.urdf.parent_map.keys():
                     self.base_link = self.links[link.name]
                 if link.name not in self.urdf.child_map.keys():
@@ -133,7 +211,7 @@ class Robot:
 
             j = Joint(joint.name, self.links[joint.parent], self.links[joint.child],
                       transform=(t * r), axis=Vector(*joint.axis))
-            self.links[joint.parent].joints.append(j)
+            # self.links[joint.parent].joints.append(j)
             self.joints[j.name] = j
 
         starting_joints = {k: 0 for k in self.joints.keys()}
@@ -148,4 +226,65 @@ class Robot:
     def link_meshes(self) -> List[open3d.geometry.TriangleMesh]:
         return [link.mesh for link in self.links.values()]
 
+    def internal_data(self) -> dict:
+        return {
+            "origin": self.origin.matrix.tolist(),
+            "links": {k: v.internal_data() for k, v in self.links.items()},
+            "joints": {k: v.internal_data() for k, v in self.joints.items()}
+        }
 
+
+_default_lr_mate = {
+    'origin': [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+    'links': {'Base': {'name': 'Base', 'joints': ['J1']},
+              'J1': {'name': 'J1', 'joints': ['J2']},
+              'J2': {'name': 'J2', 'joints': ['J3']},
+              'J3': {'name': 'J3', 'joints': ['J4']},
+              'J4': {'name': 'J4', 'joints': ['J5']},
+              'J5': {'name': 'J5', 'joints': ['J6']},
+              'J6': {'name': 'J6', 'joints': []}},
+    'joints': {'J1': {'name': 'J1', 'parent': 'Base', 'child': 'J1',
+                      'transform': [[1.0, 0.0, 0.0, 0.0],
+                                    [0.0, 1.0, 0.0, 0.0],
+                                    [0.0, 0.0, 1.0, 0.042741],
+                                    [0.0, 0.0, 0.0, 1.0]],
+                      'axis': Vector(x=0.0, y=0.0, z=1.0),
+                      'position': 0},
+               'J2': {'name': 'J2', 'parent': 'J1', 'child': 'J2',
+                      'transform': [[1.0, 0.0, 0.0, 0.05],
+                                    [0.0, 1.0, 0.0, 0.0],
+                                    [0.0, 0.0, 1.0, 0.28726],
+                                    [0.0, 0.0, 0.0, 1.0]],
+                      'axis': Vector(x=0.0, y=-1.0, z=0.0),
+                      'position': 0},
+               'J3': {'name': 'J3', 'parent': 'J2', 'child': 'J3',
+                      'transform': [[1.0, 0.0, 0.0, 0.0],
+                                    [0.0, 1.0, 0.0, 0.0],
+                                    [0.0, 0.0, 1.0, 0.33],
+                                    [0.0, 0.0, 0.0, 1.0]],
+                      'axis': Vector(x=0.0, y=-1.0, z=0.0),
+                      'position': 0},
+               'J4': {'name': 'J4', 'parent': 'J3', 'child': 'J4',
+                      'transform': [[1.0, 0.0, 0.0, 0.088001],
+                                    [0.0, 1.0, 0.0, 0.0],
+                                    [0.0, 0.0, 1.0, 0.035027],
+                                    [0.0, 0.0, 0.0, 1.0]],
+                      'axis': Vector(x=-1.0, y=0.0, z=0.0),
+                      'position': 0},
+               'J5': {'name': 'J5', 'parent': 'J4', 'child': 'J5',
+                      'transform': [[1.0, 0.0, 0.0, 0.2454],
+                                    [0.0, 1.0, 0.0, 0.0],
+                                    [0.0, 0.0, 1.0, 0.0],
+                                    [0.0, 0.0, 0.0, 1.0]],
+                      'axis': Vector(x=0.0, y=-1.0, z=0.0),
+                      'position': 0},
+               'J6': {'name': 'J6', 'parent': 'J5', 'child': 'J6',
+                      'transform': [
+                          [0.9999999999999999, 0.0, 0.0, 0.05],
+                          [0.0, -3.673205103305044e-06,
+                           -0.9999999999932537, 0.0],
+                          [0.0, 0.9999999999932537,
+                           -3.673205103305044e-06, 0.0],
+                          [0.0, 0.0, 0.0, 1.0]],
+                      'axis': Vector(x=-1.0, y=0.0, z=0.0),
+                      'position': 0}}}
